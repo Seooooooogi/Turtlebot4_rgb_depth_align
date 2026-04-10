@@ -24,6 +24,12 @@ class OakdSender(Node):
         self.declare_parameter('jpeg_quality_rgb', 85)
         self.declare_parameter('jpeg_quality_depth', 85)
         self.declare_parameter('jpeg_quality_overlay', 80)
+        # Active illumination (IR dot projector / flood LED)
+        # 0.0 = off, 1.0 = max. RPi4: Y-adapter 권장 (IR 활성 시 900mA 초과 가능)
+        self.declare_parameter('ir_dot_projector_intensity', 0.0)
+        self.declare_parameter('ir_flood_intensity', 0.0)
+        # stereo preset: "HIGH_ACCURACY" | "HIGH_DENSITY"
+        self.declare_parameter('stereo_preset', 'HIGH_DENSITY')
 
         ns = self.get_parameter('robot_namespace').value
         self.FPS = self.get_parameter('fps').value
@@ -33,6 +39,8 @@ class OakdSender(Node):
         self.jpeg_quality_rgb = self.get_parameter('jpeg_quality_rgb').value
         self.jpeg_quality_depth = self.get_parameter('jpeg_quality_depth').value
         self.jpeg_quality_overlay = self.get_parameter('jpeg_quality_overlay').value
+        ir_dot = self.get_parameter('ir_dot_projector_intensity').value
+        ir_flood = self.get_parameter('ir_flood_intensity').value
 
         # Publishers
         self.rgb_pub = self.create_publisher(
@@ -50,7 +58,10 @@ class OakdSender(Node):
         # ---------------------------------------------------------
         # [구조 변경] 1. 파이프라인을 가장 먼저 완성합니다.
         # ---------------------------------------------------------
-        self._build_pipeline(self.get_parameter('stereo_subpixel').value)
+        self._build_pipeline(
+            self.get_parameter('stereo_subpixel').value,
+            self.get_parameter('stereo_preset').value,
+        )
 
         # ---------------------------------------------------------
         # [구조 변경] 2. 디바이스를 켤 때 파이프라인을 통째로 밀어넣어 한 방에 부팅합니다. (안정성 극대화)
@@ -66,6 +77,14 @@ class OakdSender(Node):
         if self.calibData.getDistortionModel(self.RGB_SOCKET) != dai.CameraModel.Perspective:
             self.get_logger().warn("RGB 카메라가 Perspective 모델이 아닙니다. 왜곡 보정이 이상할 수 있습니다.")
 
+        # Active illumination 설정 (device 부팅 후에만 가능)
+        if ir_dot > 0.0:
+            self.device.setIrLaserDotProjectorBrightness(ir_dot)
+            self.get_logger().info(f"IR dot projector 활성화: intensity={ir_dot}")
+        if ir_flood > 0.0:
+            self.device.setIrFloodLightBrightness(ir_flood)
+            self.get_logger().info(f"IR flood LED 활성화: intensity={ir_flood}")
+
         # 큐 설정
         self.rgb_queue = self.device.getOutputQueue("rgb", 4, False)
         self.depth_queue = self.device.getOutputQueue("depth", 4, False)
@@ -78,14 +97,35 @@ class OakdSender(Node):
         self.undistort_map1, self.undistort_map2 = cv2.initUndistortRectifyMap(
             rgb_K, rgb_D, None, rgb_K, (rgb_w, rgb_h), cv2.CV_16SC2)
 
-        self.get_logger().info(f"OAK-D 노드 가동 완료 | namespace={ns} | fps={self.FPS}")
+        stereo_subpixel = self.get_parameter('stereo_subpixel').value
+        stereo_preset = self.get_parameter('stereo_preset').value
+        self.get_logger().info(
+            f"\n"
+            f"  ===== OAK-D 노드 가동 완료 =====\n"
+            f"  [네트워크]\n"
+            f"    namespace        : {ns}\n"
+            f"  [카메라]\n"
+            f"    fps              : {self.FPS}\n"
+            f"    stereo_preset    : {stereo_preset}\n"
+            f"    stereo_subpixel  : {stereo_subpixel}\n"
+            f"    RGB output       : 640x360 (IspScale 1/3)\n"
+            f"  [정밀도]\n"
+            f"    ir_dot_projector : {ir_dot} {'(활성)' if ir_dot > 0 else '(비활성)'}\n"
+            f"    ir_flood_led     : {ir_flood} {'(활성)' if ir_flood > 0 else '(비활성)'}\n"
+            f"    roi_size         : {self.roi_size}px (측정 ROI {self.roi_size*2}x{self.roi_size*2}px)\n"
+            f"  [출력]\n"
+            f"    overlay_alpha    : {self.alpha}\n"
+            f"    use_color_map    : {self.use_color_map}\n"
+            f"    jpeg quality     : rgb={self.jpeg_quality_rgb} depth={self.jpeg_quality_depth} overlay={self.jpeg_quality_overlay}\n"
+            f"  ================================="
+        )
 
         # 카메라 루프를 별도 스레드로 분리 — ROS2 executor와 독립적으로 동작
         self._stop_event = threading.Event()
         self._camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
         self._camera_thread.start()
 
-    def _build_pipeline(self, stereo_subpixel: bool):
+    def _build_pipeline(self, stereo_subpixel: bool, stereo_preset: str = 'HIGH_DENSITY'):
         self.pipeline = dai.Pipeline()
 
         camRgb = self.pipeline.create(dai.node.ColorCamera)
@@ -111,9 +151,14 @@ class OakdSender(Node):
         camRgb.setFps(self.FPS)
         camRgb.setIspScale(1, 3)
 
-        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_ACCURACY)
+        preset_map = {
+            'HIGH_ACCURACY': dai.node.StereoDepth.PresetMode.HIGH_ACCURACY,
+            'HIGH_DENSITY':  dai.node.StereoDepth.PresetMode.HIGH_DENSITY,
+        }
+        preset = preset_map.get(stereo_preset, dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+        stereo.setDefaultProfilePreset(preset)
         stereo.setDepthAlign(self.LEFT_SOCKET)
-        stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
+        # stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
         stereo.setLeftRightCheck(True)
         stereo.setSubpixel(stereo_subpixel)
 

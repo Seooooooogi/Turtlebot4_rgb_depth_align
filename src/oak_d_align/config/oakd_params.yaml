@@ -5,16 +5,23 @@ oakd_sender:
 
     # Camera settings
     fps: 30.0
-    stereo_subpixel: false
+    stereo_preset: "HIGH_DENSITY"    # HIGH_DENSITY (중거리 추천) | HIGH_ACCURACY (근거리/정밀)
+    stereo_subpixel: true
 
     # Overlay blend (0.0 = full RGB, 1.0 = full depth)
     overlay_alpha: 0.5
     use_color_map: true
 
     # Distance measurement ROI (pixels around center)
-    roi_size: 20
+    roi_size: 5
 
     # JPEG compression quality (0-100)
     jpeg_quality_rgb: 85
     jpeg_quality_depth: 85
     jpeg_quality_overlay: 80
+
+    # Active illumination — 4m 정밀도 향상 핵심
+    # 0.0 = off, 1.0 = max intensity
+    # RPi4 사용 시 IR 활성화하면 전력 900mA 초과 가능 → Y-adapter 권장
+    ir_dot_projector_intensity: 0.7   # IR 레이저 도트 프로젝터 (텍스처 없는 표면 disparity 보조)
+    ir_flood_intensity: 0.0           # IR flood LED (저조도 환경 전용, 기본 off)
