@@ -1,0 +1,20 @@
+oakd_sender:
+  ros__parameters:
+    # Robot namespace (topic prefix)
+    robot_namespace: "robot9"
+
+    # Camera settings
+    fps: 30.0
+    stereo_subpixel: true
+
+    # Overlay blend (0.0 = full RGB, 1.0 = full depth)
+    overlay_alpha: 0.5
+    use_color_map: false
+
+    # Distance measurement ROI (pixels around center)
+    roi_size: 20
+
+    # JPEG compression quality (0-100)
+    jpeg_quality_rgb: 85
+    jpeg_quality_depth: 85
+    jpeg_quality_overlay: 80

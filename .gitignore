@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# ROS2 / colcon build artifacts
+build/
+install/
+log/
+
+# Outputs & artifacts
+outputs/
+*.log
+*.bag
+*.db3
+
+# IDE
+.vscode/
+.idea/
