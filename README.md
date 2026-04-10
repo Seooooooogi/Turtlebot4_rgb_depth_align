@@ -15,7 +15,7 @@ TurtleBot4의 기존 OAK-D 패키지를 대체하는 것을 목표로 한다.
 |------|------|
 | ROS2 | Humble |
 | Python | 3.10+ |
-| depthai | 2.23.0 (고정) |
+| depthai | 2.28.0 (고정) |
 | 타겟 플랫폼 | TurtleBot4 (Raspberry Pi 4) |
 
 ---
@@ -114,7 +114,7 @@ src/oak_d_align/
 │   └── oakd_sender.launch.py
 ├── oak_d_align/
 │   └── oakd_sender_node.py    # 메인 노드
-├── requirements.txt           # depthai==2.23.0
+├── requirements.txt           # depthai==2.28.0
 ├── package.xml
 └── setup.py
 ```

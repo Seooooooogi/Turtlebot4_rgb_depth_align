@@ -5,11 +5,11 @@ oakd_sender:
 
     # Camera settings
     fps: 30.0
-    stereo_subpixel: true
+    stereo_subpixel: false
 
     # Overlay blend (0.0 = full RGB, 1.0 = full depth)
     overlay_alpha: 0.5
-    use_color_map: false
+    use_color_map: true
 
     # Distance measurement ROI (pixels around center)
     roi_size: 20
