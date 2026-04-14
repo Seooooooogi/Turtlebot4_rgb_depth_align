@@ -1,0 +1,12 @@
+
+prefix=/home/buildfarm/.hunter/_Base/16cc954/2d32323/132317e/Install
+exec_prefix=/home/buildfarm/.hunter/_Base/16cc954/2d32323/132317e/Install
+libdir=/home/buildfarm/.hunter/_Base/16cc954/2d32323/132317e/Install/lib
+sharedlibdir=/home/buildfarm/.hunter/_Base/16cc954/2d32323/132317e/Install/lib
+includedir=/home/buildfarm/.hunter/_Base/16cc954/2d32323/132317e/Install/include
+Name: zlib
+Description: zlib compression library
+Version: 1.2.11
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -lz
+Cflags: -I${includedir}

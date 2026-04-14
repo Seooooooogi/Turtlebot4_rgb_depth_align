@@ -90,8 +90,8 @@ class OakdSender(Node):
         self.depth_queue = self.device.getOutputQueue("depth", 4, False)
 
         # undistort 맵 사전 계산 (매 프레임 getCameraIntrinsics 호출 제거)
-        # IspScale(1,3): 1920x1080 -> 640x360
-        rgb_w, rgb_h = 1920 // 3, 1080 // 3
+        # IspScale(2,3): 1920x1080 -> 1280x720
+        rgb_w, rgb_h = 1920 * 2 // 3, 1080 * 2 // 3
         rgb_K = np.array(self.calibData.getCameraIntrinsics(self.RGB_SOCKET, rgb_w, rgb_h))
         rgb_D = np.array(self.rgbDistortion)
         self.undistort_map1, self.undistort_map2 = cv2.initUndistortRectifyMap(
@@ -99,6 +99,8 @@ class OakdSender(Node):
 
         stereo_subpixel = self.get_parameter('stereo_subpixel').value
         stereo_preset = self.get_parameter('stereo_preset').value
+        # dot_projector = 0.667 : c++와 통일
+        # RGB output, depth : c++와 통일, turtlebot에서는 더 낮춰야 함
         self.get_logger().info(
             f"\n"
             f"  ===== OAK-D 노드 가동 완료 =====\n"
@@ -108,7 +110,7 @@ class OakdSender(Node):
             f"    fps              : {self.FPS}\n"
             f"    stereo_preset    : {stereo_preset}\n"
             f"    stereo_subpixel  : {stereo_subpixel}\n"
-            f"    RGB output       : 640x360 (IspScale 1/3)\n"
+            f"    RGB output       : 1280x720 (IspScale 2/3)\n"
             f"  [정밀도]\n"
             f"    ir_dot_projector : {ir_dot} {'(활성)' if ir_dot > 0 else '(비활성)'}\n"
             f"    ir_flood_led     : {ir_flood} {'(활성)' if ir_flood > 0 else '(비활성)'}\n"
@@ -132,24 +134,27 @@ class OakdSender(Node):
         left = self.pipeline.create(dai.node.MonoCamera)
         right = self.pipeline.create(dai.node.MonoCamera)
         stereo = self.pipeline.create(dai.node.StereoDepth)
-        align = self.pipeline.create(dai.node.ImageAlign)
+        # [변경] C++ 방식과 통일 — ImageAlign 노드 제거 (StereoDepth에서 CAM_A 직접 정렬)
+        # align = self.pipeline.create(dai.node.ImageAlign)
         outRgb = self.pipeline.create(dai.node.XLinkOut)
         outDepth = self.pipeline.create(dai.node.XLinkOut)
         outRgb.setStreamName("rgb")
         outDepth.setStreamName("depth")
 
-        left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        # [변경] C++ 기본값 맞춤: THE_400_P → THE_800_P (640×400 → 1280×800)
+        left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_800_P)
         left.setBoardSocket(self.LEFT_SOCKET)
         left.setFps(self.FPS)
 
-        right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+        right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_800_P)
         right.setBoardSocket(self.RIGHT_SOCKET)
         right.setFps(self.FPS)
 
         camRgb.setBoardSocket(self.RGB_SOCKET)
         camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
         camRgb.setFps(self.FPS)
-        camRgb.setIspScale(1, 3)
+        # [변경] C++ 기본값 맞춤: IspScale(1,3)→(2,3) (640×360 → 1280×720)
+        camRgb.setIspScale(2, 3)
 
         preset_map = {
             'HIGH_ACCURACY': dai.node.StereoDepth.PresetMode.HIGH_ACCURACY,
@@ -157,7 +162,10 @@ class OakdSender(Node):
         }
         preset = preset_map.get(stereo_preset, dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
         stereo.setDefaultProfilePreset(preset)
-        stereo.setDepthAlign(self.LEFT_SOCKET)
+        # [변경] 기존: CAM_B(LEFT) 기준 1차 정렬 → ImageAlign으로 RGB 2차 정렬 (2단계)
+        # stereo.setDepthAlign(self.LEFT_SOCKET)
+        # [변경] C++ 방식과 통일: CAM_A(RGB) 기준으로 StereoDepth에서 직접 정렬 (1단계)
+        stereo.setDepthAlign(self.RGB_SOCKET)
         # stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
         stereo.setLeftRightCheck(True)
         stereo.setSubpixel(stereo_subpixel)
@@ -166,9 +174,12 @@ class OakdSender(Node):
         left.out.link(stereo.left)
         right.out.link(stereo.right)
 
-        stereo.depth.link(align.input)
-        camRgb.isp.link(align.inputAlignTo)
-        align.outputAligned.link(outDepth.input)
+        # [변경] 기존: 2단계 정렬 — StereoDepth → ImageAlign → outDepth
+        # stereo.depth.link(align.input)
+        # camRgb.isp.link(align.inputAlignTo)
+        # align.outputAligned.link(outDepth.input)
+        # [변경] C++ 방식과 통일: StereoDepth 출력 직접 연결
+        stereo.depth.link(outDepth.input)
 
     def _camera_loop(self):
         while not self._stop_event.is_set():

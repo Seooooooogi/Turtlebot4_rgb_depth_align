@@ -38,11 +38,23 @@
 - [ ] 2-4-1. 거리별 오차 수치 기록 (1m / 2m / 3m / 4m)
 - [ ] 2-4-2. 필터 적용 전/후 비교
 
-## Phase 3: TurtleBot4 통합 (목표: bringup 시 자동 실행) ← **현재 진행**
-- [ ] 3-1. `turtlebot4_bringup` launch 구조 분석 (TF, base_link 간 거리)
-- [ ] 3-2. 기존 OAK-D 노드와 충돌 여부 확인 (토픽/노드 네임스페이스)
-- [ ] 3-3. 커스텀 launch 파일에서 기존 OAK-D 노드 disable + 대체 노드 실행
-- [ ] 3-4. TurtleBot4 실기 테스트 (fps 및 동작 확인)
+## Phase 3: depthai_ros_driver C++ 전환 및 TurtleBot4 통합 ← **현재 진행**
+
+### 3-A. depthai_ros_driver 빌드 및 토픽 출력 확인
+- [ ] 3-A-1. `src/depthai-ros` colcon 빌드 (의존성 포함)
+- [ ] 3-A-2. OAK-D Pro (RVC2) 연결 후 드라이버 런치
+- [ ] 3-A-3. 발행 토픽 목록 및 메시지 포맷 확인 (`/oak/stereo/points`, `/oak/rgb/image_raw` 등)
+
+### 3-B. Python 노드 vs C++ 드라이버 병렬 비교
+- [ ] 3-B-1. 동일 조건에서 두 노드 동시 실행
+- [ ] 3-B-2. CPU 사용률 / 지연시간 / 깊이 정확도 비교
+
+### 3-C. TurtleBot4 bringup launch 통합
+- [ ] 3-C-1. `turtlebot4_bringup` launch 구조 분석 (TF, base_link 간 거리)
+- [ ] 3-C-2. 기존 OAK-D 노드와 충돌 여부 확인 (토픽/노드 네임스페이스)
+- [ ] 3-C-3. 커스텀 launch 파일에서 기존 OAK-D 노드 disable + `depthai_ros_driver` 실행
+- [ ] 3-C-4. RPi4 배포 전 PC dry-run 검증
+- [ ] 3-C-5. TurtleBot4 실기 테스트 (fps 및 동작 확인)
 
 ## Phase 4: 마무리
 - [ ] 4-1. `dai.VideoEncoder` 활용 RPi4 CPU 부담 완화 (백로그 → 필요시)
