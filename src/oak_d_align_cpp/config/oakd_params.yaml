@@ -1,0 +1,24 @@
+oakd_sender:
+  ros__parameters:
+    # Topic prefix. 비워두면 /oakd/... 로 발행. TurtleBot4 배포 시 "robot9" 로 설정.
+    robot_namespace: ""
+
+    # Camera settings
+    fps: 30.0
+    stereo_preset: "HIGH_DENSITY"    # HIGH_DENSITY (중거리) | HIGH_ACCURACY (근거리 정밀)
+    stereo_subpixel: true
+
+    # Overlay blend (0.0 = full RGB, 1.0 = full depth). enable_overlay 가 true 일 때만 사용.
+    overlay_alpha: 0.5
+    use_color_map: false
+    jpeg_quality_overlay: 80
+    enable_overlay: false    # 기본 비활성 (CPU 절약). 검증 시에만 true 로 토글.
+
+    # Distance measurement ROI (픽셀) — 현재 C++ 포트는 미사용
+    roi_size: 5
+
+    # Active illumination — 4m 정밀도 향상 핵심
+    # 0.0 = off, 1.0 = max intensity
+    # RPi4 사용 시 IR 활성화하면 전력 900mA 초과 가능 → Y-adapter 권장
+    ir_dot_projector_intensity: 0.0
+    ir_flood_intensity: 0.0
