@@ -25,5 +25,6 @@ outputs/
 .vscode/
 .idea/
 
-# Docs (vendor reference files, work logs, local docs)
-docs/
+# Docs (vendor reference files, work logs, local docs — decisions/ 제외)
+docs/*
+!docs/decisions/
