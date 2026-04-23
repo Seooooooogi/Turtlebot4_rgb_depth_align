@@ -24,3 +24,6 @@ outputs/
 # IDE
 .vscode/
 .idea/
+
+# Docs (vendor reference files, work logs, local docs)
+docs/
