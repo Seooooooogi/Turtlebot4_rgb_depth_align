@@ -25,6 +25,10 @@ outputs/
 .vscode/
 .idea/
 
-# Docs (vendor reference files, work logs, local docs — decisions/ 제외)
+# Docs (vendor reference files, work logs, local decisions, ADRs)
 docs/*
-!docs/decisions/
+
+# Claude Code agent assets (per-machine, untracked)
+.agent/
+CLAUDE.md
+BRIEF.md
