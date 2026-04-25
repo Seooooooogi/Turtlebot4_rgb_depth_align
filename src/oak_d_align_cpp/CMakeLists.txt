@@ -67,7 +67,7 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
-install(DIRECTORY launch config
+install(DIRECTORY launch config systemd
   DESTINATION share/${PROJECT_NAME}
 )
 

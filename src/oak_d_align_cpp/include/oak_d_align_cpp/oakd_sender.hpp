@@ -49,13 +49,14 @@ private:
   static constexpr dai::CameraBoardSocket RIGHT_SOCKET = dai::CameraBoardSocket::CAM_C;
 
   // Parameters (cached at init)
-  std::string robot_namespace_;
   double fps_ {30.0};
   int roi_size_ {5};
   double overlay_alpha_ {0.5};
   bool use_color_map_ {false};
   int jpeg_quality_overlay_ {80};
   bool enable_overlay_ {false};
+  int rgb_isp_num_ {2};
+  int rgb_isp_den_ {3};
 
   // Undistort maps (precomputed)
   cv::Mat undistort_map1_;

@@ -14,9 +14,9 @@ namespace oak_d_align_cpp
 OakdSender::OakdSender(const rclcpp::NodeOptions & options)
 : rclcpp::Node("oakd_sender", options)
 {
-  // ── 파라미터 선언 (Python 노드 스키마와 1:1 일치) ─────────────────
-  // robot_namespace: 비워두면 prefix 없이 /oakd/... 로 발행. TurtleBot4 배포 시 YAML 에서 "robot9" 로 override.
-  declare_parameter<std::string>("robot_namespace", "");
+  // ── 파라미터 선언 ─────────────────────────────────────────────────
+  // 토픽 namespace 는 노드 namespace 로 결정 (launch 의 PushRosNamespace 또는 ROBOT_NAMESPACE).
+  // 코드는 상대 경로만 선언 — ROS2 표준 메커니즘 (Rule 5) 준수.
   declare_parameter<double>("fps", 30.0);
   declare_parameter<bool>("stereo_subpixel", true);
   declare_parameter<std::string>("stereo_preset", "HIGH_DENSITY");
@@ -27,8 +27,11 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   declare_parameter<bool>("use_color_map", false);
   declare_parameter<int>("jpeg_quality_overlay", 80);
   declare_parameter<bool>("enable_overlay", false);
+  // RGB ISP downscale: num/den. Sensor 1920×1080 → (num/den) × (1920×1080).
+  // 예) (2,3) → 1280×720, (1,3) → 640×360, (1,2) → 960×540.
+  declare_parameter<int>("rgb_isp_num", 2);
+  declare_parameter<int>("rgb_isp_den", 3);
 
-  robot_namespace_ = get_parameter("robot_namespace").as_string();
   fps_ = get_parameter("fps").as_double();
   const auto subpixel = get_parameter("stereo_subpixel").as_bool();
   const auto preset = get_parameter("stereo_preset").as_string();
@@ -39,6 +42,15 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   use_color_map_ = get_parameter("use_color_map").as_bool();
   jpeg_quality_overlay_ = get_parameter("jpeg_quality_overlay").as_int();
   enable_overlay_ = get_parameter("enable_overlay").as_bool();
+  rgb_isp_num_ = get_parameter("rgb_isp_num").as_int();
+  rgb_isp_den_ = get_parameter("rgb_isp_den").as_int();
+  if (rgb_isp_num_ <= 0 || rgb_isp_den_ <= 0 || rgb_isp_num_ > rgb_isp_den_) {
+    RCLCPP_ERROR(
+      get_logger(),
+      "Invalid rgb_isp ratio (%d/%d). num/den must be positive and num<=den.",
+      rgb_isp_num_, rgb_isp_den_);
+    throw std::runtime_error("invalid rgb_isp ratio");
+  }
 
   // ── 파이프라인 구축 ────────────────────────────────────────────────
   buildPipeline(subpixel, preset);
@@ -76,9 +88,9 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   depth_queue_ = device_->getOutputQueue("depth", 4, false);
 
   // ── undistort map 사전 계산 (매 프레임 호출 제거) ─────────────────
-  // IspScale(2, 3): 1920×1080 → 1280×720
-  const int rgb_w = 1920 * 2 / 3;
-  const int rgb_h = 1080 * 2 / 3;
+  // IspScale(num, den): 1920×1080 → (num/den) × (1920×1080)
+  const int rgb_w = 1920 * rgb_isp_num_ / rgb_isp_den_;
+  const int rgb_h = 1080 * rgb_isp_num_ / rgb_isp_den_;
   auto K_vec = calib.getCameraIntrinsics(RGB_SOCKET, rgb_w, rgb_h);
   auto D_vec = calib.getDistortionCoefficients(RGB_SOCKET);
 
@@ -97,11 +109,12 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
     undistort_map1_, undistort_map2_);
 
   // ── Publishers (image_transport: raw + compressed 플러그인 자동 발행) ──
-  // robot_namespace 가 비어 있으면 prefix 없이, 지정되면 "/{ns}/..." 로.
-  const std::string ns_prefix = robot_namespace_.empty() ? "" : "/" + robot_namespace_;
-  const std::string rgb_topic = ns_prefix + "/oakd/rgb/image_raw/aligned";
-  const std::string depth_topic = ns_prefix + "/oakd/stereo/image_raw/aligned";
-  const std::string overlay_topic = ns_prefix + "/oakd/overlay/compressed";
+  // 상대 경로만 선언 — 노드 namespace (launch PushRosNamespace 또는 ROBOT_NAMESPACE)
+  // 가 자동으로 prefix 를 붙임. PC standalone (namespace 비) → /oakd/...,
+  // TurtleBot4 (namespace=/robot9) → /robot9/oakd/...
+  const std::string rgb_topic = "oakd/rgb/image_raw/aligned";
+  const std::string depth_topic = "oakd/stereo/image_raw/aligned";
+  const std::string overlay_topic = "oakd/overlay/compressed";
 
   rgb_pub_ = image_transport::create_publisher(this, rgb_topic);
   depth_pub_ = image_transport::create_publisher(this, depth_topic);
@@ -113,23 +126,23 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(
     get_logger(),
     "===== OAK-D C++ 노드 가동 완료 =====\n"
-    "  namespace      : %s\n"
+    "  node namespace : %s\n"
     "  fps            : %.1f\n"
     "  stereo_preset  : %s\n"
     "  stereo_subpixel: %s\n"
-    "  RGB output     : %dx%d (IspScale 2/3)\n"
+    "  RGB output     : %dx%d (IspScale %d/%d)\n"
     "  ir_dot         : %.3f %s\n"
     "  ir_flood       : %.3f %s\n"
     "  enable_overlay : %s\n"
     "  RGB topic      : %s\n"
     "  Depth topic    : %s\n"
     "====================================",
-    robot_namespace_.c_str(), fps_, preset.c_str(),
-    subpixel ? "true" : "false", rgb_w, rgb_h,
+    get_namespace(), fps_, preset.c_str(),
+    subpixel ? "true" : "false", rgb_w, rgb_h, rgb_isp_num_, rgb_isp_den_,
     ir_dot, ir_dot > 0.0 ? "(on)" : "(off)",
     ir_flood, ir_flood > 0.0 ? "(on)" : "(off)",
     enable_overlay_ ? "true" : "false",
-    rgb_topic.c_str(), depth_topic.c_str());
+    rgb_pub_.getTopic().c_str(), depth_pub_.getTopic().c_str());
 
   // ── 카메라 루프 스레드 시작 (ROS2 executor 와 독립) ────────────────
   camera_thread_ = std::thread(&OakdSender::cameraLoop, this);
@@ -167,11 +180,11 @@ void OakdSender::buildPipeline(bool subpixel, const std::string & preset)
   right->setBoardSocket(RIGHT_SOCKET);
   right->setFps(static_cast<float>(fps_));
 
-  // RGB 1080P + IspScale 2/3 → 1280×720
+  // RGB 1080P + IspScale (num/den) → e.g. (2,3)→1280×720, (1,3)→640×360
   camRgb->setBoardSocket(RGB_SOCKET);
   camRgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
   camRgb->setFps(static_cast<float>(fps_));
-  camRgb->setIspScale(2, 3);
+  camRgb->setIspScale(rgb_isp_num_, rgb_isp_den_);
 
   // Stereo preset
   auto preset_mode = dai::node::StereoDepth::PresetMode::HIGH_DENSITY;

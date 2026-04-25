@@ -20,6 +20,12 @@
   <exec_depend>compressed_image_transport</exec_depend>
   <exec_depend>compressed_depth_image_transport</exec_depend>
 
+  <!-- turtlebot4_bringup.launch.py runtime dependencies -->
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>turtlebot4_bringup</exec_depend>
+  <exec_depend>turtlebot4_description</exec_depend>
+  <exec_depend>turtlebot4_diagnostics</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 

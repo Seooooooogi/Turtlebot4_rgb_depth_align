@@ -1,12 +1,18 @@
-oakd_sender:
+/**/oakd_sender:
   ros__parameters:
-    # Topic prefix. 비워두면 /oakd/... 로 발행. TurtleBot4 배포 시 "robot9" 로 설정.
-    robot_namespace: ""
+    # 토픽 namespace 는 노드 namespace (launch PushRosNamespace 또는 ROBOT_NAMESPACE) 로 결정.
+    # 코드는 상대 경로만 선언 (Rule 5). YAML 의 robot_namespace 키는 더 이상 없음.
 
     # Camera settings
     fps: 30.0
     stereo_preset: "HIGH_DENSITY"    # HIGH_DENSITY (중거리) | HIGH_ACCURACY (근거리 정밀)
     stereo_subpixel: true
+
+    # RGB ISP downscale: sensor 1920×1080 → (num/den) × (1920×1080)
+    # (2,3) → 1280×720, (1,3) → 640×360, (1,2) → 960×540.
+    # 640×360 적용 — TurtleBot4 RPi4 USB/CPU 부하 절감 목적 (compressedDepth Hz 회복).
+    rgb_isp_num: 1
+    rgb_isp_den: 3
 
     # Overlay blend (0.0 = full RGB, 1.0 = full depth). enable_overlay 가 true 일 때만 사용.
     overlay_alpha: 0.5
