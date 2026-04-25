@@ -125,9 +125,14 @@ Turtlebot4_rgb_depth_align/
 
 ## 알려진 이슈
 
-- **Depth 정밀도** — 현재 `HIGH_DENSITY` preset + IR off + depthai 후처리 필터 미설정 상태.
-  근거리 / 텍스처 없는 면 (모니터, 평면 벽) 에서 노이즈 큼. 별도 phase 에서 IR Y-adapter,
-  preset 비교, median/confidence 필터 노출 예정.
+- **Depth 정밀도 한계** — 4m 거리 측정 시 절대 오차 ~80cm + 시간 변동 ±20cm 잔존.
+  근본 원인: OAK-D PRO 의 75mm baseline (장거리 ≥4m 부적합) + EEPROM calibration
+  정밀도 한계. StereoDepth 후처리 필터 (median, confidence_threshold,
+  subpixel_fractional_bits, speckle, threshold) 모두 파라미터로 노출되어 환경별
+  활성 가능하나 default OFF — 활성 시 valid pixel 솎아내며 시각 align 평가가
+  도리어 어려워지는 부작용 확인됨. 추가 향상은 (a) Y-adapter 후 IR projector,
+  (b) Tier 0 fabrication 정책 결정 후 temporal filter, (c) 하드웨어 교체
+  (OAK-D LR long baseline 150mm) 가 후보.
 - **ComposableNodeContainer 적재 race** — TurtleBot4 launch 통합 중 일부 부팅에서
   `LoadComposableNodes` 가 silent 하게 미호출. 현재 `Node` action 으로 fallback.
 
