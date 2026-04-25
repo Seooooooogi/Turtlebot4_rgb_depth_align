@@ -83,6 +83,33 @@ class DepthOverlay(Node):
         cv2.putText(overlay, label, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
+        # Center depth (mm, 16UC1) — 5x5 ROI median, 0 invalid 제외.
+        cy, cx = dh // 2, dw // 2
+        half = 2
+        roi = depth_raw[max(0, cy-half):cy+half+1, max(0, cx-half):cx+half+1]
+        valid = roi[roi > 0]
+        if valid.size == 0:
+            depth_str = 'Center: N/A'
+        else:
+            mm = float(np.median(valid))
+            depth_str = f'Center: {mm/1000.0:.2f} m ({int(mm)} mm)'
+
+        # Crosshair (overlay 좌표계 — RGB 해상도 기준).
+        ocx, ocy = rw // 2, rh // 2
+        cv2.line(overlay, (ocx - 12, ocy), (ocx + 12, ocy), (0, 255, 255), 2)
+        cv2.line(overlay, (ocx, ocy - 12), (ocx, ocy + 12), (0, 255, 255), 2)
+        # Text — 십자선 위.
+        text_size, _ = cv2.getTextSize(depth_str, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        tx = ocx - text_size[0] // 2
+        ty = ocy - 20
+        # 텍스트 가독성 위해 배경 + 흰글자.
+        cv2.rectangle(overlay,
+                      (tx - 5, ty - text_size[1] - 5),
+                      (tx + text_size[0] + 5, ty + 5),
+                      (0, 0, 0), -1)
+        cv2.putText(overlay, depth_str, (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
         cv2.imshow('RGB-Depth Overlay (q to quit)', overlay)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cv2.destroyAllWindows()

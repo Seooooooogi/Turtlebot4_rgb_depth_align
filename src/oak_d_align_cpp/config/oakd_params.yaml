@@ -14,6 +14,21 @@
     rgb_isp_num: 1
     rgb_isp_den: 3
 
+    # StereoDepth 후처리 필터 — depth raw 노이즈 감소.
+    # median: "OFF" | "KERNEL_3x3" | "KERNEL_5x5" | "KERNEL_7x7"
+    # confidence_threshold: 0~255 (높을수록 명확한 pixel 만, hole ↑)
+    # 후처리 필터 — 비교 baseline 위해 모두 비활성 (preset 자동값만).
+    # 활성화 시: median "KERNEL_7x7" / confidence 200 / subpixel_bits 5 /
+    #           speckle true (50) / threshold true (200~5000).
+    stereo_median_filter: "OFF"
+    stereo_confidence_threshold: 245   # HIGH_DENSITY preset default
+    subpixel_fractional_bits: 3        # depthai default
+    speckle_filter_enabled: false
+    speckle_range: 50
+    threshold_filter_enabled: false
+    threshold_min_mm: 200
+    threshold_max_mm: 5000
+
     # Overlay blend (0.0 = full RGB, 1.0 = full depth). enable_overlay 가 true 일 때만 사용.
     overlay_alpha: 0.5
     use_color_map: false

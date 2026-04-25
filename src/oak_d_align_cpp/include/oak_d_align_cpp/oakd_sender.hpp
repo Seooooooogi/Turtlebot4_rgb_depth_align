@@ -16,6 +16,19 @@
 namespace oak_d_align_cpp
 {
 
+// StereoDepth 후처리 필터 묶음 (Group A — drop-only / no fabrication).
+struct StereoFilterConfig
+{
+  std::string median_filter_name;
+  int confidence_threshold;
+  int subpixel_fractional_bits;
+  bool speckle_enabled;
+  int speckle_range;
+  bool threshold_enabled;
+  int threshold_min_mm;
+  int threshold_max_mm;
+};
+
 class OakdSender : public rclcpp::Node
 {
 public:
@@ -24,7 +37,11 @@ public:
 
 private:
   // Pipeline construction
-  void buildPipeline(bool subpixel, const std::string & preset, int lens_position);
+  void buildPipeline(
+    bool subpixel,
+    const std::string & preset,
+    int lens_position,
+    const StereoFilterConfig & filters);
 
   // Camera thread loop
   void cameraLoop();

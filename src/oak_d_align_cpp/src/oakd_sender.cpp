@@ -31,6 +31,21 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   // 예) (2,3) → 1280×720, (1,3) → 640×360, (1,2) → 960×540.
   declare_parameter<int>("rgb_isp_num", 2);
   declare_parameter<int>("rgb_isp_den", 3);
+  // StereoDepth 후처리 필터.
+  // median: "OFF" | "KERNEL_3x3" | "KERNEL_5x5" | "KERNEL_7x7" — invalid pixel 주변 평활.
+  // confidence_threshold: 0~255. 높을수록 명확한 pixel 만 남음 (hole ↑).
+  declare_parameter<std::string>("stereo_median_filter", "KERNEL_7x7");
+  declare_parameter<int>("stereo_confidence_threshold", 200);
+  // H1: subpixel fractional bits — 3/4/5. 높을수록 disparity 정밀도 ↑
+  // (3→754 / 4→1506 / 5→3010 unique depth values).
+  declare_parameter<int>("subpixel_fractional_bits", 5);
+  // H3: speckle filter — 외딴 점 노이즈 drop (Group A, fabrication 없음).
+  declare_parameter<bool>("speckle_filter_enabled", true);
+  declare_parameter<int>("speckle_range", 50);
+  // H4: threshold filter — 작업 범위 외 disparity drop. 4m 환경 기준.
+  declare_parameter<bool>("threshold_filter_enabled", true);
+  declare_parameter<int>("threshold_min_mm", 200);
+  declare_parameter<int>("threshold_max_mm", 5000);
 
   fps_ = get_parameter("fps").as_double();
   const auto subpixel = get_parameter("stereo_subpixel").as_bool();
@@ -44,6 +59,14 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   enable_overlay_ = get_parameter("enable_overlay").as_bool();
   rgb_isp_num_ = get_parameter("rgb_isp_num").as_int();
   rgb_isp_den_ = get_parameter("rgb_isp_den").as_int();
+  const auto median_filter_name = get_parameter("stereo_median_filter").as_string();
+  const auto confidence_threshold = get_parameter("stereo_confidence_threshold").as_int();
+  const auto subpixel_bits = get_parameter("subpixel_fractional_bits").as_int();
+  const auto speckle_enabled = get_parameter("speckle_filter_enabled").as_bool();
+  const auto speckle_range = get_parameter("speckle_range").as_int();
+  const auto threshold_enabled = get_parameter("threshold_filter_enabled").as_bool();
+  const auto threshold_min_mm = get_parameter("threshold_min_mm").as_int();
+  const auto threshold_max_mm = get_parameter("threshold_max_mm").as_int();
   if (rgb_isp_num_ <= 0 || rgb_isp_den_ <= 0 || rgb_isp_num_ > rgb_isp_den_) {
     RCLCPP_ERROR(
       get_logger(),
@@ -72,7 +95,12 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   }
 
   // ── 파이프라인 구축 (lens_position 전달 → setManualFocus) ──────────
-  buildPipeline(subpixel, preset, lens_position);
+  StereoFilterConfig filters{
+    median_filter_name, confidence_threshold, subpixel_bits,
+    speckle_enabled, speckle_range,
+    threshold_enabled, threshold_min_mm, threshold_max_mm,
+  };
+  buildPipeline(subpixel, preset, lens_position, filters);
 
   // ── 파이프라인 시작 ───────────────────────────────────────────────
   try {
@@ -168,7 +196,11 @@ OakdSender::~OakdSender()
   }
 }
 
-void OakdSender::buildPipeline(bool subpixel, const std::string & preset, int lens_position)
+void OakdSender::buildPipeline(
+  bool subpixel,
+  const std::string & preset,
+  int lens_position,
+  const StereoFilterConfig & filters)
 {
   auto camRgb = pipeline_.create<dai::node::ColorCamera>();
   auto left = pipeline_.create<dai::node::MonoCamera>();
@@ -218,6 +250,66 @@ void OakdSender::buildPipeline(bool subpixel, const std::string & preset, int le
   stereo->setDepthAlign(RGB_SOCKET);
   stereo->setLeftRightCheck(true);
   stereo->setSubpixel(subpixel);
+
+  // ── StereoDepth 후처리 필터 (모두 OAK-D VPU on-device — RPi4 CPU 0) ──
+  // Median filter — invalid pixel 주변 평활.
+  auto median_value = dai::MedianFilter::KERNEL_7x7;
+  if (filters.median_filter_name == "OFF") {
+    median_value = dai::MedianFilter::MEDIAN_OFF;
+  } else if (filters.median_filter_name == "KERNEL_3x3") {
+    median_value = dai::MedianFilter::KERNEL_3x3;
+  } else if (filters.median_filter_name == "KERNEL_5x5") {
+    median_value = dai::MedianFilter::KERNEL_5x5;
+  } else if (filters.median_filter_name == "KERNEL_7x7") {
+    median_value = dai::MedianFilter::KERNEL_7x7;
+  } else {
+    RCLCPP_WARN(get_logger(),
+      "알 수 없는 stereo_median_filter='%s' → KERNEL_7x7 적용",
+      filters.median_filter_name.c_str());
+  }
+  stereo->initialConfig.setMedianFilter(median_value);
+
+  // Confidence threshold — 낮은 confidence disparity invalidate (0~255).
+  if (filters.confidence_threshold < 0 || filters.confidence_threshold > 255) {
+    RCLCPP_WARN(get_logger(),
+      "stereo_confidence_threshold=%d 범위 외 (0~255) → 200 적용",
+      filters.confidence_threshold);
+    stereo->initialConfig.setConfidenceThreshold(200);
+  } else {
+    stereo->initialConfig.setConfidenceThreshold(filters.confidence_threshold);
+  }
+
+  // Subpixel fractional bits (3/4/5) — disparity 정밀도. subpixel 활성 시에만 의미.
+  if (subpixel) {
+    if (filters.subpixel_fractional_bits >= 3 && filters.subpixel_fractional_bits <= 5) {
+      stereo->setSubpixelFractionalBits(filters.subpixel_fractional_bits);
+    } else {
+      RCLCPP_WARN(get_logger(),
+        "subpixel_fractional_bits=%d 범위 외 (3~5) → depthai default 유지",
+        filters.subpixel_fractional_bits);
+    }
+  }
+
+  // Speckle / Threshold filter — initialConfig.get() / set() 으로 직접 설정.
+  // 둘 다 drop-only (Tier 0 'no fabrication' 호환).
+  auto post_cfg = stereo->initialConfig.get();
+  post_cfg.postProcessing.speckleFilter.enable = filters.speckle_enabled;
+  post_cfg.postProcessing.speckleFilter.speckleRange =
+    static_cast<uint32_t>(std::max(0, filters.speckle_range));
+  if (filters.threshold_enabled) {
+    post_cfg.postProcessing.thresholdFilter.minRange = filters.threshold_min_mm;
+    post_cfg.postProcessing.thresholdFilter.maxRange = filters.threshold_max_mm;
+  }
+  stereo->initialConfig.set(post_cfg);
+
+  RCLCPP_INFO(get_logger(),
+    "Stereo 후처리: median=%s, confidence=%d, subpixel_bits=%d, "
+    "speckle=%s(range=%d), threshold=%s(%d~%d mm)",
+    filters.median_filter_name.c_str(), filters.confidence_threshold,
+    filters.subpixel_fractional_bits,
+    filters.speckle_enabled ? "ON" : "OFF", filters.speckle_range,
+    filters.threshold_enabled ? "ON" : "OFF",
+    filters.threshold_min_mm, filters.threshold_max_mm);
 
   // 링크
   camRgb->isp.link(outRgb->input);
