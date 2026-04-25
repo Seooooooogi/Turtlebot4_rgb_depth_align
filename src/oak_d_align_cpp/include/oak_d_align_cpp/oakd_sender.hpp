@@ -24,7 +24,7 @@ public:
 
 private:
   // Pipeline construction
-  void buildPipeline(bool subpixel, const std::string & preset);
+  void buildPipeline(bool subpixel, const std::string & preset, int lens_position);
 
   // Camera thread loop
   void cameraLoop();

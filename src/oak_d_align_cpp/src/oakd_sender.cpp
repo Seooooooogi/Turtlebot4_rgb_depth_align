@@ -52,25 +52,34 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
     throw std::runtime_error("invalid rgb_isp ratio");
   }
 
-  // ── 파이프라인 구축 ────────────────────────────────────────────────
-  buildPipeline(subpixel, preset);
-
-  // ── 디바이스 오픈 (파이프라인 통째 주입) ──────────────────────────
+  // ── 디바이스 USB 연결 (pipeline 시작 전, calib 선행 read 위해) ────
   try {
-    device_ = std::make_shared<dai::Device>(pipeline_);
+    device_ = std::make_shared<dai::Device>();
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_logger(), "dai::Device open 실패: %s", e.what());
     throw;
   }
 
-  // ── 캘리브레이션 ──────────────────────────────────────────────────
+  // ── 캘리브레이션 (EEPROM 1회 read — lens position + intrinsic 양쪽 용도) ─
   auto calib = device_->readCalibration();
+  const int lens_position = calib.getLensPosition(RGB_SOCKET);
 
   const auto distortion_model = calib.getDistortionModel(RGB_SOCKET);
   if (distortion_model != dai::CameraModel::Perspective) {
     RCLCPP_WARN(
       get_logger(),
       "RGB 카메라가 Perspective 모델이 아닙니다. 왜곡 보정이 이상할 수 있습니다.");
+  }
+
+  // ── 파이프라인 구축 (lens_position 전달 → setManualFocus) ──────────
+  buildPipeline(subpixel, preset, lens_position);
+
+  // ── 파이프라인 시작 ───────────────────────────────────────────────
+  try {
+    device_->startPipeline(pipeline_);
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(get_logger(), "dai::Device startPipeline 실패: %s", e.what());
+    throw;
   }
 
   // ── IR illumination (device 부팅 후에만 설정 가능) ────────────────
@@ -159,7 +168,7 @@ OakdSender::~OakdSender()
   }
 }
 
-void OakdSender::buildPipeline(bool subpixel, const std::string & preset)
+void OakdSender::buildPipeline(bool subpixel, const std::string & preset, int lens_position)
 {
   auto camRgb = pipeline_.create<dai::node::ColorCamera>();
   auto left = pipeline_.create<dai::node::MonoCamera>();
@@ -185,6 +194,19 @@ void OakdSender::buildPipeline(bool subpixel, const std::string & preset)
   camRgb->setResolution(dai::ColorCameraProperties::SensorResolution::THE_1080_P);
   camRgb->setFps(static_cast<float>(fps_));
   camRgb->setIspScale(rgb_isp_num_, rgb_isp_den_);
+
+  // RGB Manual focus — EEPROM calibration 시점 lens position 으로 고정.
+  // AF 가 활성이면 lens reposition 시 EEPROM intrinsic K 와 런타임 K 가 어긋나
+  // host-side cv::remap 이 frame-by-frame 어긋남 → RGB-Depth align silent drift.
+  if (lens_position > 0) {
+    camRgb->initialControl.setManualFocus(static_cast<uint8_t>(lens_position));
+    RCLCPP_INFO(get_logger(),
+      "RGB manual focus 적용: lens position = %d (EEPROM calibration)", lens_position);
+  } else {
+    RCLCPP_WARN(get_logger(),
+      "EEPROM 에 RGB lens position 미기록 (=0) → auto-focus 유지. "
+      "RGB-Depth align 정확도 frame drift 가능 — calibration 재진행 권장.");
+  }
 
   // Stereo preset
   auto preset_mode = dai::node::StereoDepth::PresetMode::HIGH_DENSITY;
