@@ -145,10 +145,25 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
     K, D, cv::Mat(), K, cv::Size(rgb_w, rgb_h), CV_16SC2,
     undistort_map1_, undistort_map2_);
 
-  // ── Publishers (image_transport: raw + compressed 플러그인 자동 발행) ──
-  // 상대 경로만 선언 — 노드 namespace (launch PushRosNamespace 또는 ROBOT_NAMESPACE)
-  // 가 자동으로 prefix 를 붙임. PC standalone (namespace 비) → /oakd/...,
-  // TurtleBot4 (namespace=/robot9) → /robot9/oakd/...
+  // ── Publishers ───────────────────────────────────────────────────────────
+  // [상대 경로 선언 정책 — Rule 5 / docs/turtlebot4_bringup_integration.md §4]
+  //   토픽 절대 경로를 코드에 박지 않는다. 상대 경로로 선언하면 노드 namespace
+  //   (launch PushRosNamespace 또는 ROBOT_NAMESPACE 환경변수) 가 자동으로
+  //   prefix 를 부착한다. 결과:
+  //     PC standalone (namespace 비) → "/oakd/rgb/image_raw/aligned"
+  //     TurtleBot4 (namespace=/robot9) → "/robot9/oakd/rgb/image_raw/aligned"
+  //
+  // [`/aligned` 접미사 이유]
+  //   vendor `oakd.launch.py` 는 `/oakd/rgb/image_raw` 를 사용. 동시 실행 시
+  //   토픽 충돌 위험을 피하기 위해 `/aligned` 접미사로 우리의 (host 정렬 적용)
+  //   변형임을 이름에 명시. consumer 는 `/aligned` 토픽을 명시적으로 구독해야 함.
+  //
+  // [image_transport 자동 부수 토픽]
+  //   `image_transport::create_publisher` 는 base 토픽 외에 plugin 별 압축 토픽을
+  //   자동으로 추가 발행. package.xml 의 exec_depend 에 다음이 있어야 활성화:
+  //     - compressed_image_transport       → `<base>/compressed` (JPEG, RGB)
+  //     - compressed_depth_image_transport → `<base>/compressedDepth` (RVL/PNG, 16UC1)
+  //   TurtleBot4 ↔ PC 간 USB/네트워크 대역 절감을 위해 필수.
   const std::string rgb_topic = "oakd/rgb/image_raw/aligned";
   const std::string depth_topic = "oakd/stereo/image_raw/aligned";
   const std::string overlay_topic = "oakd/overlay/compressed";
@@ -156,6 +171,8 @@ OakdSender::OakdSender(const rclcpp::NodeOptions & options)
   rgb_pub_ = image_transport::create_publisher(this, rgb_topic);
   depth_pub_ = image_transport::create_publisher(this, depth_topic);
   if (enable_overlay_) {
+    // overlay 는 항상 JPEG 인코딩 후 발행하므로 image_transport 미사용.
+    // 직접 sensor_msgs::msg::CompressedImage publisher 만 생성.
     overlay_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>(
       overlay_topic, rclcpp::QoS(10));
   }
